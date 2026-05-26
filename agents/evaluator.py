@@ -1,4 +1,4 @@
-# backend/agents/evaluator.py
+
 
 import sys
 import os
@@ -8,10 +8,7 @@ import json
 from agents.base import call_llm, parse_json
 from models import ReviewSession
 
-# ─────────────────────────────────────────────
-# EVALUATOR SYSTEM PROMPT
-# Strict critic — challenges every claim
-# ─────────────────────────────────────────────
+
 
 EVALUATOR_SYSTEM = """
 You are the Objective Evaluator in an AI-powered promotion review board.
@@ -56,10 +53,7 @@ Verdict guide:
 """
 
 
-# ─────────────────────────────────────────────
-# AGENTIC DATA FETCHER SYSTEM PROMPT
-# LLM decides what data to extract — not hardcoded
-# ─────────────────────────────────────────────
+
 
 FETCHER_SYSTEM = """
 You are a Data Fetcher agent inside an HR promotion review system.
@@ -81,35 +75,15 @@ Return plain text only. No JSON. No headers. Just the finding.
 """
 
 
-# ─────────────────────────────────────────────
-# AGENTIC FETCHER FUNCTION
-# LLM reads the gap request and finds relevant data
-# This replaces hardcoded if/else keyword matching
-# ─────────────────────────────────────────────
+
 
 def run_agentic_fetcher(
     data_request:  str,
     raw_employee:  dict,
     session:       ReviewSession
 ) -> str:
-    """
-    Truly agentic data fetcher.
 
-    Instead of hardcoded keyword matching like:
-        if "mentor" in request: return hardcoded_string
 
-    The LLM reads the actual request, looks through
-    real employee data, and extracts what's relevant.
-
-    Why this is more agentic:
-    - Works for ANY data request, not just anticipated ones
-    - Reasons about relevance, not just keyword presence
-    - Returns "Data not available" honestly when data is missing
-    - Uses small model — fast and cheap for this simple lookup task
-    """
-
-    # Format ALL available raw data for the LLM to search through
-    # Include everything — LLM decides what's relevant
     searchable_data = {
         "github": raw_employee.get("github"),
         "jira":   raw_employee.get("jira"),
@@ -141,24 +115,21 @@ Use exact numbers and facts. Be concise.
         user_prompt   = user_prompt,
         agent_name    = f"agentic_fetcher",
         session       = session,
-        model_size    = "small",    # small model enough for data lookup
-        max_tokens    = 300,        # short focused response
-        temperature   = 0.1         # very deterministic
+        model_size    = "small",   
+        max_tokens    = 300,        
+        temperature   = 0.1        
     )
 
     return response.strip()
 
 
-# ─────────────────────────────────────────────
-# MAIN EVALUATOR FUNCTION
-# ─────────────────────────────────────────────
 
 def run_evaluator(
     harvester_output: dict,
     advocate_output:  dict,
     session:          ReviewSession,
-    raw_employee:     dict = None,    # needed for agentic fetcher
-    stream_callback   = None          # optional live updates
+    raw_employee:     dict = None,    
+    stream_callback   = None          
 ) -> dict:
     """
     Evaluates the Advocate's brief against the competency matrix.
@@ -181,15 +152,13 @@ def run_evaluator(
     MAX_LOOPS  = 2
     loop_count = 0
 
-    # Start with original metrics
+  
     current_metrics = dict(harvester_output.get("metrics", {}))
 
-    # Track what was requested in previous loops
-    # Prevents asking for the same data twice
+   
     previous_requests = []
 
-    # Get raw employee data for fetcher
-    # Falls back to fetching it ourselves if not passed in
+    
     if raw_employee is None:
         try:
             raw_employee = get_employee(harvester_output.get("employee_id", ""))
@@ -198,10 +167,10 @@ def run_evaluator(
 
     while loop_count < MAX_LOOPS:
 
-        # ── Build competency text ──
+        
         competency = get_competency(harvester_output["target_level"])
 
-        # ── Format advocate strengths ──
+        
         strengths_text = ""
         for i, s in enumerate(advocate_output.get("strengths", []), 1):
             strengths_text += f"{i}. {s['category']}\n"
@@ -211,7 +180,7 @@ def run_evaluator(
         if not strengths_text:
             strengths_text = "No strengths provided by Advocate."
 
-        # ── Format current metrics ──
+        
         metrics_text = ""
         for key, data in current_metrics.items():
             if isinstance(data, dict) and data.get("value") is not None:
@@ -313,16 +282,15 @@ Evaluate strictly. Is the evidence strong enough for promotion?
             if stream_callback:
                 stream_callback("evaluator", "loop", msg)
 
-            # Track this request to prevent repetition
+            
             previous_requests.append(data_request)
 
-            # ── Agentic Fetcher ──
-            # LLM reads the request and finds relevant data
+            #
             print(f"   🔍 Fetcher searching for: {data_request}")
             extra_data = run_agentic_fetcher(data_request, raw_employee, session)
             print(f"   📦 Fetcher found: {extra_data[:100]}...")
 
-            # Add extra data to metrics for next loop
+            
             current_metrics[f"extra_evidence_{loop_count}"] = {
                 "value":  extra_data,
                 "weight": 0.0,
@@ -330,10 +298,10 @@ Evaluate strictly. Is the evidence strong enough for promotion?
             }
 
             loop_count += 1
-            # Continue to next loop with richer data
+            
 
         else:
-            # Evaluator satisfied OR must conclude
+            
             reason = ""
             if not needs_more:
                 reason = "Evaluator satisfied with evidence"
@@ -352,16 +320,14 @@ Evaluate strictly. Is the evidence strong enough for promotion?
             result["conclusion_reason"] = reason
             return result
 
-    # Safety net — should never reach here
-    # but always return something valid
+    
+    
     result["loops_run"]   = loop_count
     result["total_calls"] = loop_count + 1
     return result
 
 
-# ─────────────────────────────────────────────
-# QUICK TEST
-# ─────────────────────────────────────────────
+
 
 if __name__ == "__main__":
     from models import ReviewSession
