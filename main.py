@@ -46,10 +46,6 @@ async def verify_api_key(key: str = Security(api_key_header)):
 sessions: dict[str, ReviewSession] = {}
 
 async def get_or_restore_session(employee_id: str) -> ReviewSession | None:
-    """
-    Checks RAM for a session. If missing (e.g. server restarted),
-    fetches from MongoDB and restores it to RAM.
-    """
     
     if employee_id in sessions:
         return sessions[employee_id]
@@ -85,10 +81,9 @@ async def start_review(employee_id: str):
                     f"Wait for it to complete or check /status/{employee_id}"
                 )
             )
-        # If previous review is complete, allow starting a new one
-        # (manager wants to re-review after time has passed)
+      
 
-    # Create new session — safe to do now
+    
     session = ReviewSession(employee_id)
     sessions[employee_id] = session
 
@@ -114,14 +109,14 @@ async def start_review(employee_id: str):
                 "data":    data
             }
             try:
-            # put_nowait raises QueueFull instead of waiting forever
+            
                 queue.put_nowait(f"data: {json.dumps(payload)}\n\n")
             except asyncio.QueueFull:
-            # Client is too slow or disconnected — drop this update
-            # The review still continues running — we just don't buffer
+            
+            
                 print(f"SSE queue full for {employee_id} — dropping update from {agent}")
 
-        # Run review in background task
+        
         async def run_review():
             try:
                 await run_full_review(employee_id, session, queued_callback)
@@ -130,13 +125,13 @@ async def start_review(employee_id: str):
                     f"data: {json.dumps({'agent': 'system', 'status': 'error', 'message': str(e)})}\n\n"
                 )
             finally:
-                # Signal stream is done
+                
                 await queue.put(None)
 
-        # Start review in background
+        
         asyncio.create_task(run_review())
 
-        # Stream queue items to frontend
+        
         while True:
             item = await queue.get()
             if item is None:
@@ -169,7 +164,7 @@ class DecisionRequest(BaseModel):
 @app.post("/decide/{employee_id}", dependencies=[Depends(verify_api_key)])
 async def make_decision(employee_id: str, body: DecisionRequest):
 
-    # ⬇️ THE FIX: Use our new lazy-loader
+    
     session = await get_or_restore_session(employee_id)
     
     if not session:
@@ -181,13 +176,13 @@ async def make_decision(employee_id: str, body: DecisionRequest):
     if session.is_complete():
         raise HTTPException(status_code=409, detail=f"Decision already recorded as '{session.human_decision}'")
 
-    # Save to RAM
+    
     result = apply_human_decision(session, body.decision.value, body.comment)
 
-    # Save to MongoDB
+    
     await save_human_decision(employee_id, body.decision.value, body.comment)
 
-    # 🧹 PREVENT RAM LEAK: Since it's done, clear it from RAM
+    
     sessions.pop(employee_id, None)
 
     return result
@@ -197,7 +192,7 @@ async def make_decision(employee_id: str, body: DecisionRequest):
 @app.get("/status/{employee_id}", dependencies=[Depends(verify_api_key)])
 async def get_status(employee_id: str):
     
-    # ⬇️ THE FIX: Use our new lazy-loader
+    
     session = await get_or_restore_session(employee_id)
     
     if not session:
@@ -228,9 +223,7 @@ async def get_review_history(employee_id: str):
     if not review:
         raise HTTPException(status_code=404, detail=f"No review history found for {employee_id}")
     return review
-# ─────────────────────────────────────────────
-# HEALTH CHECK
-# ─────────────────────────────────────────────
+
 
 @app.get("/")
 async def root():
